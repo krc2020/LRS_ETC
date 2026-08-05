@@ -1,0 +1,21 @@
+# build/runtime junk
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.egg-info/
+build/
+dist/
+.DS_Store
+
+# local-only: Claude session notes & internal documents (never push)
+CLAUDE.md
+LRS Proposal Cycle14 Specification.docx
+streamlit_app_v2.py
+
+# local-only: maintainer notes & analysis artifacts (not needed by the ETC)
+DEPLOY.md
+LRS_sens_shape_test.png
+ETC_flowchart.png
+ETC_flowchart.pdf
+LRS_SNR_vs_time.png
+LRS_SNR_vs_time.pdf

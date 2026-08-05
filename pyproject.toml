@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "monet-calc"
+version = "6.4.0"
+description = "MONET Calc - Module of Numerical Exposure Time Calculator (NARIT LRS @ 2.4-m TNT)"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Krittapas Chanchaiworawit", email = "krittapas@narit.or.th"}]
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.21",
+    "scipy>=1.7",
+    "matplotlib>=3.4",
+]
+
+[project.optional-dependencies]
+full = ["astropy>=5.0", "dust_extinction>=1.0"]
+app = ["streamlit>=1.30"]
+fetch = ["spextra", "speclite"]
+
+[project.urls]
+Homepage = "https://github.com/krc2020/LRS_ETC"
+
+[tool.setuptools]
+packages = ["lrs_etc"]
