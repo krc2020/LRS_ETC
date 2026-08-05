@@ -672,7 +672,7 @@ def normalize(spec, mag_ab, wav0=6000.0, extended=False):
     return out
 
 # --- SDSS filter photometry (real Doi et al. 2010 responses) ------------
-_trapz = getattr(np, "trapezoid", np.trapz)
+_trapz = getattr(np, "trapezoid", None) or getattr(np, "trapz", None)
 SDSS_BANDS = {}
 for _b in "ugriz":
     for _p in [pathlib.Path("filters") / f"sdss_{_b}.txt",

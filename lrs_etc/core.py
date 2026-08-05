@@ -22,7 +22,7 @@ from .config import (WAV, PIX_WAV, HC, C_AA_S, A_CM2, SLITS, DISP_AA_PIX,
                      DAYTIME_CAL_S)
 from . import config
 
-_trapz = getattr(np, "trapezoid", np.trapz)
+_trapz = getattr(np, "trapezoid", None) or getattr(np, "trapz", None)
 
 # ========================================================================
 # Throughput
