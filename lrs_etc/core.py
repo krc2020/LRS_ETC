@@ -391,6 +391,7 @@ def run_lrs_etc(spec, t_per_frame, n_frames, slit="1.8", seeing=1.1,
                 lunar="dark", clouds="photometric", airmass=1.2,
                 altitude_deg=None, temperature="-80C", readout="slow",
                 extract_arcsec=None, source_fwhm_arcsec=0.0,
+                source_extent_arcsec=None,
                 use_empirical=None, psf_profile="gaussian",
                 moffat_beta=3.5):
     """Core ETC: per-pixel S/N for `spec` under the given configuration.
@@ -405,7 +406,13 @@ def run_lrs_etc(spec, t_per_frame, n_frames, slit="1.8", seeing=1.1,
     extended = spec.get("extended", False)
     fwhm_eff = float(np.hypot(seeing, source_fwhm_arcsec))
     if extract_arcsec is None:
-        extract_arcsec = max(1.5 * fwhm_eff, 2 * SPATIAL_AS_PIX)
+        if extended and source_extent_arcsec:
+            # matched window: extract over the object's extent along the slit
+            extract_arcsec = float(np.clip(source_extent_arcsec,
+                                           2 * SPATIAL_AS_PIX,
+                                           SLIT_LENGTH_ARCSEC))
+        else:
+            extract_arcsec = max(1.5 * fwhm_eff, 2 * SPATIAL_AS_PIX)
     n_spat = max(1, int(np.ceil(extract_arcsec / SPATIAL_AS_PIX)))
 
     flam_conv = gaussian_filter1d(np.nan_to_num(spec["flam"]),
@@ -416,8 +423,13 @@ def run_lrs_etc(spec, t_per_frame, n_frames, slit="1.8", seeing=1.1,
     phot = PIX_WAV / HC
 
     if extended:
+        # Source flux is collected only over the object's extent: the
+        # illuminated area is slit width x min(extraction, source extent).
+        # Without source_extent_arcsec, uniform SB fills the extraction.
+        eff_h = (min(extract_arcsec, source_extent_arcsec)
+                 if source_extent_arcsec else extract_arcsec)
         S = (flam_pix * phot * A_CM2 * eta * atm * DISP_AA_PIX
-             * w_slit * extract_arcsec)
+             * w_slit * eff_h)
         fslit = 1.0
     else:
         fslit = slit_coupling(fwhm_eff, w_slit, extract_arcsec,
@@ -449,6 +461,8 @@ def run_lrs_etc(spec, t_per_frame, n_frames, slit="1.8", seeing=1.1,
                 n_spat=n_spat, R=R,
                 config=dict(slit=slit, seeing=seeing, fwhm_eff=fwhm_eff,
                             source_fwhm_arcsec=source_fwhm_arcsec,
+                            source_extent_arcsec=source_extent_arcsec,
+                            extended=extended,
                             lunar=lunar, clouds=clouds, airmass=airmass,
                             temperature=temperature, readout=readout,
                             extract_arcsec=extract_arcsec,
@@ -473,10 +487,16 @@ def check_warnings(res, t_per_frame):
     cfg = res["config"]
     fwhm = cfg.get("fwhm_eff", cfg["seeing"])
     h = cfg["extract_arcsec"]
-    sig = fwhm / 2.3548
-    fy_ext = erf((h / 2) / (np.sqrt(2) * sig))
-    fy_cen = erf((SPATIAL_AS_PIX / 2) / (np.sqrt(2) * sig))
-    peak_frac = np.clip(fy_cen / max(fy_ext, 1e-9), 0, 1)
+    if cfg.get("extended", False):
+        # uniform surface brightness: every illuminated row is a "peak" row
+        eff_h = cfg.get("source_extent_arcsec") or h
+        peak_frac = np.clip(SPATIAL_AS_PIX / max(min(h, eff_h),
+                                                 SPATIAL_AS_PIX), 0, 1)
+    else:
+        sig = fwhm / 2.3548
+        fy_ext = erf((h / 2) / (np.sqrt(2) * sig))
+        fy_cen = erf((SPATIAL_AS_PIX / 2) / (np.sqrt(2) * sig))
+        peak_frac = np.clip(fy_cen / max(fy_ext, 1e-9), 0, 1)
     sky_pix = res["B"] / res["n_spat"]
     dark = DARK_E_PIX_S[cfg["temperature"]]
     peak_adu = ((res["S"] * peak_frac + sky_pix + dark) * t_per_frame

@@ -44,6 +44,9 @@ Workflow for an observed magnitude: **redshift → extinguish → normalize**.
 
 `extended=True` interprets magnitudes/fluxes **per arcsec²** (uniform
 surface brightness; no PSF/slit losses; aperture = slit × extraction).
+Give `source_extent_arcsec=` in `run_lrs_etc` for an object of finite
+extent along the slit — the extraction window matches the extent and the
+2-D simulators keep sky rows outside the object for a valid subtraction.
 
 ## 4. Run the ETC
 
@@ -62,7 +65,8 @@ res = etc.run_lrs_etc(spec, t_per_frame, n_frames, **options)
 | `altitude_deg` or `airmass` | 30/45/60/75/90 → X = sec z | altitude overrides airmass |
 | `temperature` | `"-80C"`, `"-100C"` | dark 0.08 / 0.003 e⁻/pix/s |
 | `readout` | `"slow"`, `"medium"`, `"fast"` | RN 4/12/15 e⁻; readout 7/3/1 s |
-| `extract_arcsec` | 1.5 × FWHM_eff | extraction window along the slit |
+| `source_extent_arcsec` | `None` | extended sources only: object extent along the slit (″). Sets the extraction window, confines the object band in the 2-D simulators, and reserves sky rows outside it for the sky fit. Omit → object fills the slit, no on-slit sky subtraction (offset-sky warning) |
+| `extract_arcsec` | 1.5 × FWHM_eff (point) or the source extent (extended) | extraction window along the slit |
 | `use_empirical` | `None` (→ config default `True`) | **True** = commissioning-calibrated (×0.29 gray + measured chromatic shape, shutter-corrected); **False** = theoretical model |
 
 Result keys: `wav, snr_pix, snr_aa, S, B` (e⁻/s), `flam_pix, fslit,

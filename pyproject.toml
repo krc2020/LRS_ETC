@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "monet-calc"
-version = "6.4.0"
+version = "6.5.0"
 description = "MONET Calc - Module of Numerical Exposure Time Calculator (NARIT LRS @ 2.4-m TNT)"
 readme = "README.md"
 license = {text = "MIT"}

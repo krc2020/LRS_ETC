@@ -102,24 +102,43 @@ def _vignette(y, roll=2.0):
     edge = SLIT_LENGTH_ARCSEC / 2
     return 0.5 * (1 + erf((edge - np.abs(y)) / (np.sqrt(2) * roll)))
 
+def _extent_profile(y, extent_arcsec, seeing):
+    """Seeing-smoothed top-hat of the given along-slit extent: ~1 inside
+    the object, rolling off over the seeing scale at its edges."""
+    sig = max(seeing, 0.3) / 2.3548
+    half = extent_arcsec / 2.0
+    return 0.5 * (erf((half - y) / (np.sqrt(2) * sig))
+                  + erf((half + y) / (np.sqrt(2) * sig)))
+
 def _sim_rates(spec, t_per_frame, n_frames, n_rows, seeing, **etc_kwargs):
     res = run_lrs_etc(spec, t_per_frame, n_frames, seeing=seeing,
                       extract_arcsec=n_rows * SPATIAL_AS_PIX, **etc_kwargs)
-    fwhm = res["config"].get("fwhm_eff", seeing)
+    cfg = res["config"]
+    fwhm = cfg.get("fwhm_eff", seeing)
     y = (np.arange(n_rows) - n_rows / 2 + 0.5) * SPATIAL_AS_PIX
     vig = _vignette(y)
     if spec.get("extended", False):
-        src = (res["S"][None, :] / n_rows) * np.ones((n_rows, 1)) * vig[:, None]
+        extent = cfg.get("source_extent_arcsec")
+        if extent:
+            # finite object: distribute its total through-slit flux over a
+            # seeing-smoothed top-hat of the given extent
+            prof = _extent_profile(y, extent, seeing) * vig
+            norm = max(prof.sum(), 1e-9)
+            src = res["S"][None, :] * (prof / norm)[:, None]
+        else:
+            # legacy behavior: uniform SB filling the whole illuminated slit
+            src = ((res["S"][None, :] / n_rows) * np.ones((n_rows, 1))
+                   * vig[:, None])
     else:
         frac = _row_fractions(y, fwhm)
         sig = fwhm / 2.3548
-        fy = erf((res["config"]["extract_arcsec"] / 2) / (np.sqrt(2) * sig))
+        fy = erf((cfg["extract_arcsec"] / 2) / (np.sqrt(2) * sig))
         src = ((res["S"] / max(fy, 1e-9))[None, :] * frac[:, None]
                * vig[:, None])
     sky = ((res["B"] / res["n_spat"])[None, :] * _slit_illum_poly4(y)[:, None]
            * vig[:, None])
-    dark = DARK_E_PIX_S[res["config"]["temperature"]]
-    rn = READ_NOISE_E[res["config"]["readout"]]
+    dark = DARK_E_PIX_S[cfg["temperature"]]
+    rn = READ_NOISE_E[cfg["readout"]]
     return res, y, src, sky, dark, rn, vig
 
 def _mark_vignette(ax, y):
@@ -162,14 +181,33 @@ def reduced_2d_figure(spec, t_per_frame, n_frames, n_rows=256, seeing=1.1,
     src_e, sky_e = src * t_tot, sky * t_tot
     var = src_e + sky_e + dark * t_tot + n_frames * rn ** 2
     noisy = src_e + sky_e + rng.normal(0, np.sqrt(var))
-    fwhm = res["config"].get("fwhm_eff", seeing)
-    fit_rows = (np.abs(y) >= 3 * fwhm) & (vig > 0.9)
+    cfg = res["config"]
+    fwhm = cfg.get("fwhm_eff", seeing)
+    # Sky-fit rows must EXCLUDE the object. For an extended source of
+    # known extent, mask its extent plus a seeing margin; a point/compact
+    # source is masked over 3x the effective FWHM. If the object (or an
+    # extended source with no stated extent) leaves too few clean rows,
+    # on-slit sky subtraction is impossible - warn and skip it, exactly
+    # as at the telescope you would need offset-sky exposures.
+    if spec.get("extended", False):
+        extent = cfg.get("source_extent_arcsec")
+        half_excl = (extent / 2 + max(seeing, 2.0)) if extent else np.inf
+    else:
+        half_excl = 3 * fwhm
+    fit_rows = (np.abs(y) >= half_excl) & (vig > 0.9)
     illum = vig > 0.5
     yy = y / (SLIT_LENGTH_ARCSEC / 2)
     sky_est = np.zeros_like(noisy)
-    for c in range(noisy.shape[1]):
-        p = np.polyfit(yy[fit_rows], noisy[fit_rows, c], sky_fit_deg)
-        sky_est[illum, c] = np.polyval(p, yy[illum])
+    sky_subtracted = fit_rows.sum() >= 8
+    if sky_subtracted:
+        for c in range(noisy.shape[1]):
+            p = np.polyfit(yy[fit_rows], noisy[fit_rows, c], sky_fit_deg)
+            sky_est[illum, c] = np.polyval(p, yy[illum])
+    else:
+        print("WARNING: the object occupies (nearly) the whole slit - no "
+              "clean sky rows for on-slit subtraction. Showing the map "
+              "WITHOUT sky subtraction; plan offset-sky exposures for "
+              "such targets (or set source_extent_arcsec).")
     snr_map = (noisy - sky_est) / np.sqrt(var)
     fig, ax = plt.subplots(figsize=(11, 4.2))
     im = ax.imshow(snr_map, origin="lower", aspect="auto", cmap="RdBu_r",
@@ -178,7 +216,10 @@ def reduced_2d_figure(spec, t_per_frame, n_frames, n_rows=256, seeing=1.1,
     ax.set_xlabel("Wavelength (Å)")
     ax.set_ylabel("Along slit (arcsec)")
     ax.set_title(f"Reduced 2-D S/N — {n_frames}x{t_per_frame:.0f} s, "
-                 f"sky fit deg={sky_fit_deg} vs true deg-4", fontsize=10)
+                 + (f"sky fit deg={sky_fit_deg} vs true deg-4"
+                    if sky_subtracted else
+                    "NO sky subtraction (object fills the slit)"),
+                 fontsize=10)
     _mark_vignette(ax, y)
     fig.colorbar(im, ax=ax, label="S/N per pixel", pad=0.01)
     fig.tight_layout()

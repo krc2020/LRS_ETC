@@ -8,7 +8,7 @@ mirror reflectivities are the 2026 NARIT measurements.
 from pathlib import Path
 import numpy as np
 
-__version__ = "6.4.0"
+__version__ = "6.5.0"
 
 # --- data root: repo checkout layout ------------------------------------
 def _find_data_root():

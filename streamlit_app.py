@@ -75,6 +75,14 @@ with st.sidebar:
     norm_mode = st.radio("Mode", ["SDSS filter mag", "AB mag at λ₀",
                                   "Total flux in range"])
     extended = st.checkbox("Extended source (per arcsec²)")
+    src_extent = None
+    if extended:
+        src_extent = st.number_input(
+            "Object extent along the slit (″)", 2.0, 170.0, 10.0, 1.0,
+            help="Flux is collected over slit × min(extraction, extent); "
+                 "the extraction window defaults to this extent, and the "
+                 "simulated sky fit stays outside it. Objects larger than "
+                 "~150″ leave no on-slit sky and need offset-sky exposures.")
     if norm_mode == "SDSS filter mag":
         band = st.selectbox("Band", list("ugriz"), index=2)
         mag = st.number_input("AB magnitude", 5.0, 28.0, 19.0, 0.1)
@@ -129,7 +137,8 @@ except (ValueError, KeyError) as e:
 ETC_KW = dict(slit=slit, seeing=seeing, lunar=lunar, clouds=clouds,
               altitude_deg=alt, temperature=temp, readout=readout,
               source_fwhm_arcsec=src_fwhm, use_empirical=use_emp,
-              psf_profile=psf, moffat_beta=beta)
+              psf_profile=psf, moffat_beta=beta,
+              source_extent_arcsec=src_extent)
 
 def show_warnings(res, t_frame):
     wrn = etc.check_warnings(res, t_frame)

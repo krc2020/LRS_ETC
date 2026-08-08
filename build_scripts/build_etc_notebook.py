@@ -33,10 +33,10 @@ def md(src):
 # ----------------------------------------------------------------------
 cells.append(md("""# NARIT LRS @ 2.4-m TNT — Exposure-Time Calculator
 
-**Version 6.4 (2026-07-24)** · maintainer: Krittapas Chanchaiworawit (NARIT)
+**Version 6.5 (2026-08-08)** · maintainer: Krittapas Chanchaiworawit (NARIT)
 · observation-preparation service for LRS @ TNT proposers.
 
-**Changelog** — v6.4: **empirical commissioning calibration** (`USE_EMPIRICAL_CALIBRATION` switch, §2b) from the shutter-corrected BD+75°325 rates (stuck-open shutter → +7 s per frame; gray factor ≈ 0.29 with the measured chromatic response shape); v6.3: measured TNT mirror reflectivities, SDSS-filter + total-flux normalization, resolved-source profiles; v6.2: standalone `LRS_ETC` repository;
+**Changelog** — v6.5: **finite extent for extended sources** (`source_extent_arcsec` — matched extraction window, seeing-smoothed object band in the 2-D simulators, extent-aware sky fit; without it an extended object fills the slit and the reduced map warns that on-slit sky subtraction is impossible); v6.4: **empirical commissioning calibration** (`USE_EMPIRICAL_CALIBRATION` switch, §2b) from the shutter-corrected BD+75°325 rates (stuck-open shutter → +7 s per frame; gray factor ≈ 0.29 with the measured chromatic response shape); v6.3: measured TNT mirror reflectivities, SDSS-filter + total-flux normalization, resolved-source profiles; v6.2: standalone `LRS_ETC` repository;
 v6.1: validation vs 2026-04-01 commissioning, deployment audit; v6.0:
 research template library (Pickles / Kinney–Calzetti / AGN / SDSS),
 Galactic extinction, redshifting to z = 9, target visibility, request-time
@@ -78,7 +78,7 @@ plt.rcParams.update({"figure.dpi": 110, "font.size": 10,
                      "axes.titlesize": 11, "axes.labelsize": 10})
 NAVY, LIME, ORANGE, RED = "#1E2761", "#39B54A", "#F4B400", "#E94F37"
 
-ETC_VERSION = "6.4"
+ETC_VERSION = "6.5"
 
 # Data folder: relative to the repo when run in place, else look next to
 # the user's home copy of the repository.
@@ -1310,6 +1310,7 @@ cells.append(code("""def run_lrs_etc(spec, t_per_frame, n_frames,
                 airmass=1.2, altitude_deg=None,
                 temperature="-80C", readout="slow",
                 extract_arcsec=None, source_fwhm_arcsec=0.0,
+                source_extent_arcsec=None,
                 use_empirical=None, psf_profile="gaussian",
                 moffat_beta=3.5):
     \"\"\"Core ETC. Returns a dict of per-pixel arrays and the config.
@@ -1335,7 +1336,12 @@ cells.append(code("""def run_lrs_etc(spec, t_per_frame, n_frames,
     extended = spec.get("extended", False)
     fwhm_eff = float(np.hypot(seeing, source_fwhm_arcsec))
     if extract_arcsec is None:
-        extract_arcsec = max(1.5 * fwhm_eff, 2 * SPATIAL_AS_PIX)
+        if extended and source_extent_arcsec:
+            extract_arcsec = float(np.clip(source_extent_arcsec,
+                                           2 * SPATIAL_AS_PIX,
+                                           SLIT_LENGTH_ARCSEC))
+        else:
+            extract_arcsec = max(1.5 * fwhm_eff, 2 * SPATIAL_AS_PIX)
     n_spat = max(1, int(np.ceil(extract_arcsec / SPATIAL_AS_PIX)))
 
     # --- convolve template to the instrument resolution, resample to pixels
@@ -1351,7 +1357,10 @@ cells.append(code("""def run_lrs_etc(spec, t_per_frame, n_frames,
 
     # --- source rate (e-/s per pixel column)
     if extended:
-        area = w_slit * extract_arcsec                    # arcsec^2 in aperture
+        # object covers only source_extent_arcsec of the aperture (if given)
+        eff_h = (min(extract_arcsec, source_extent_arcsec)
+                 if source_extent_arcsec else extract_arcsec)
+        area = w_slit * eff_h                             # arcsec^2 of object
         S = flam_pix * phot * A_CM2 * eta * atm * DISP_AA_PIX * area
         fslit = 1.0
     else:
@@ -1388,6 +1397,8 @@ cells.append(code("""def run_lrs_etc(spec, t_per_frame, n_frames,
                 t_tot=t_tot, fslit=fslit, n_spat=n_spat, R=R,
                 config=dict(slit=slit, seeing=seeing, fwhm_eff=fwhm_eff,
                             source_fwhm_arcsec=source_fwhm_arcsec,
+                            source_extent_arcsec=source_extent_arcsec,
+                            extended=extended,
                             lunar=lunar, clouds=clouds, airmass=airmass,
                             temperature=temperature, readout=readout,
                             extract_arcsec=extract_arcsec,
@@ -1440,11 +1451,18 @@ cells.append(code("""def check_warnings(res, t_per_frame):
     \"\"\"Per-wavelength warning masks for a run_lrs_etc() result.\"\"\"
     cfg = res["config"]
     seeing = cfg.get("fwhm_eff", cfg["seeing"]); h = cfg["extract_arcsec"]
-    sig = seeing / 2.3548
-    # fraction of the extracted light landing on the brightest 0.9" row
-    fy_extract = erf((h / 2) / (np.sqrt(2) * sig))
-    fy_center  = erf((SPATIAL_AS_PIX / 2) / (np.sqrt(2) * sig))
-    peak_row_frac = np.clip(fy_center / max(fy_extract, 1e-9), 0, 1)
+    if cfg.get("extended", False):
+        # uniform surface brightness: each row gets an equal share of the
+        # object rows actually covered (source_extent_arcsec if given)
+        eff_h = cfg.get("source_extent_arcsec") or h
+        peak_row_frac = np.clip(SPATIAL_AS_PIX / max(min(h, eff_h),
+                                                     SPATIAL_AS_PIX), 0, 1)
+    else:
+        sig = seeing / 2.3548
+        # fraction of the extracted light landing on the brightest 0.9" row
+        fy_extract = erf((h / 2) / (np.sqrt(2) * sig))
+        fy_center  = erf((SPATIAL_AS_PIX / 2) / (np.sqrt(2) * sig))
+        peak_row_frac = np.clip(fy_center / max(fy_extract, 1e-9), 0, 1)
 
     sky_pix_rate  = res["B"] / res["n_spat"]          # e-/s per pixel
     dark          = DARK_E_PIX_S[cfg["temperature"]]
@@ -1607,13 +1625,22 @@ def _vignette(y_rows, rolloff_arcsec=2.0):
     return 0.5 * (1 + erf((edge - np.abs(y_rows))
                           / (np.sqrt(2) * rolloff_arcsec)))
 
+def _extent_profile(y_rows, extent_arcsec, seeing):
+    \"\"\"Seeing-smoothed top-hat: an extended object of finite extent
+    along the slit, edges blurred by the PSF.\"\"\"
+    sig = max(seeing, 0.3) / 2.3548
+    half = extent_arcsec / 2.0
+    return 0.5 * (erf((half - y_rows) / (np.sqrt(2) * sig))
+                  + erf((half + y_rows) / (np.sqrt(2) * sig)))
+
 def _sim_rates(spec, t_per_frame, n_frames, n_rows, seeing, **etc_kwargs):
     \"\"\"Common per-row/per-column e-/s rates for the 2-D simulators.
 
     Point / resolved-Gaussian sources: spatial profile is the Gaussian of
     FWHM_eff = sqrt(seeing^2 + source^2) integrated over each 0.9\" row.
-    extended=True (surface-brightness) sources: distributed UNIFORMLY
-    along the illuminated slit, like the sky.\"\"\"
+    extended=True sources: if source_extent_arcsec is given, the flux is
+    distributed over a seeing-smoothed top-hat of that extent; otherwise
+    UNIFORMLY along the illuminated slit, like the sky.\"\"\"
     res = run_lrs_etc(spec, t_per_frame, n_frames, seeing=seeing,
                       extract_arcsec=n_rows * SPATIAL_AS_PIX, **etc_kwargs)
     cfg = res["config"]
@@ -1621,9 +1648,15 @@ def _sim_rates(spec, t_per_frame, n_frames, n_rows, seeing, **etc_kwargs):
     y = (np.arange(n_rows) - n_rows / 2 + 0.5) * SPATIAL_AS_PIX
     vig = _vignette(y)
     if spec.get("extended", False):
-        # uniform surface brightness: equal share per illuminated row
-        src_rows = (res["S"][None, :] / n_rows) * np.ones((n_rows, 1))
-        src_rows = src_rows * vig[:, None]
+        extent = cfg.get("source_extent_arcsec")
+        if extent:
+            # finite extent: seeing-smoothed top-hat along the slit
+            prof = _extent_profile(y, extent, seeing) * vig
+            src_rows = res["S"][None, :] * (prof / max(prof.sum(), 1e-9))[:, None]
+        else:
+            # uniform surface brightness: equal share per illuminated row
+            src_rows = (res["S"][None, :] / n_rows) * np.ones((n_rows, 1))
+            src_rows = src_rows * vig[:, None]
     else:
         frac = _row_fractions(y, fwhm_eff)
         sig = fwhm_eff / 2.3548
@@ -1632,7 +1665,10 @@ def _sim_rates(spec, t_per_frame, n_frames, n_rows, seeing, **etc_kwargs):
                     * vig[:, None])
     print(f"  spatial profile: FWHM_eff = {fwhm_eff:.1f} arcsec "
           f"= {fwhm_eff/SPATIAL_AS_PIX:.1f} rows"
-          + ("  (uniform: extended source)" if spec.get('extended') else
+          + ((f"  (extended source, extent "
+              f"{cfg.get('source_extent_arcsec'):.0f} arcsec along the slit)"
+              if cfg.get('source_extent_arcsec') else
+              "  (uniform: extended source)") if spec.get('extended') else
              f", slit coupling = {res['fslit']:.2f}"))
     sky_row = (res["B"] / res["n_spat"])[None, :] * np.ones((n_rows, 1))
     illum = _slit_illum_poly4(y)
@@ -1700,14 +1736,27 @@ def simulate_reduced_2d(spec, t_per_frame, n_frames, n_rows=256, seeing=1.1,
 
     # Per-column sky fit along the slit: use illuminated rows only,
     # excluding rows near the source (as the real pipeline does)
-    mask_src  = np.abs(y) < 3 * seeing
-    fit_rows  = (~mask_src) & (vig > 0.9)
+    cfg = res["config"]
+    if spec.get("extended", False):
+        extent = cfg.get("source_extent_arcsec")
+        # without an extent the object covers the whole slit -> no sky rows
+        half_excl = (extent / 2 + max(seeing, 2.0)) if extent else np.inf
+    else:
+        half_excl = 3 * seeing
+    fit_rows  = (np.abs(y) >= half_excl) & (vig > 0.9)
     sky_est = np.zeros_like(noisy)
     yy = y / (SLIT_LENGTH_ARCSEC / 2)
     illum_rows = vig > 0.5
-    for c in range(noisy.shape[1]):
-        p = np.polyfit(yy[fit_rows], noisy[fit_rows, c], sky_fit_deg)
-        sky_est[illum_rows, c] = np.polyval(p, yy[illum_rows])
+    sky_subtracted = fit_rows.sum() >= 8
+    if sky_subtracted:
+        for c in range(noisy.shape[1]):
+            p = np.polyfit(yy[fit_rows], noisy[fit_rows, c], sky_fit_deg)
+            sky_est[illum_rows, c] = np.polyval(p, yy[illum_rows])
+    else:
+        print("WARNING: the object occupies (nearly) the whole slit - no "
+              "clean sky rows for on-slit subtraction. Showing the map "
+              "WITHOUT sky subtraction; plan offset-sky exposures for "
+              "such targets (or set source_extent_arcsec).")
     reduced = noisy - sky_est
     snr_map = reduced / np.sqrt(var)
 
@@ -1718,8 +1767,10 @@ def simulate_reduced_2d(spec, t_per_frame, n_frames, n_rows=256, seeing=1.1,
     cfg = res["config"]
     ax.set_xlabel("Wavelength (Å)"); ax.set_ylabel("Along slit (arcsec)")
     ax.set_title(f"Reduced 2-D S/N — {n_frames}x{t_per_frame:.0f} s stacked, "
-                 f"sky fit deg={sky_fit_deg} vs true deg-4, illuminated "
-                 f"rows only (residual stripes under OH bands)")
+                 + (f"sky fit deg={sky_fit_deg} vs true deg-4, illuminated "
+                    f"rows only (residual stripes under OH bands)"
+                    if sky_subtracted else
+                    "NO sky subtraction (object fills the slit)"))
     _mark_vignette(ax, y)
     plt.colorbar(im, ax=ax, label="S/N per pixel", pad=0.01)
     plt.tight_layout(); plt.show()
@@ -1743,6 +1794,18 @@ _ = simulate_reduced_2d(sb19, t_per_frame=600, n_frames=3, lunar="gray",
 # profile broadens to sqrt(2^2 + 3^2) = 3.6" and slit losses grow further.
 _ = simulate_reduced_2d(sb19, t_per_frame=600, n_frames=3, lunar="gray",
                         seeing=2.0, source_fwhm_arcsec=3.0)
+
+# An EXTENDED (surface-brightness) object with a finite extent along the
+# slit: source_extent_arcsec confines the object to a seeing-smoothed
+# band, the extraction window matches the extent, and the sky fit uses
+# only the rows OUTSIDE the object - so the reduced map keeps the object
+# instead of subtracting it as sky. Without source_extent_arcsec the
+# object fills the slit and no on-slit sky subtraction is possible.
+sb20_ext = normalize(load_template("kc96_sb") if RESEARCH
+                     else TEMPLATES["star-forming galaxy"],
+                     20.0, extended=True)      # 20 AB / arcsec^2
+_ = simulate_reduced_2d(sb20_ext, t_per_frame=600, n_frames=3, lunar="gray",
+                        seeing=2.0, source_extent_arcsec=20.0)
 """))
 
 
