@@ -14,7 +14,14 @@ Observation-preparation tool for the **Low-Resolution Spectrograph (LRS)**
 on the 2.4-m Thai National Telescope, Doi Inthanon. Single mode: long-slit
 spectroscopy, 4000–8092 Å at 4 Å/pixel.
 
-**Maintainer:** Krittapas Chanchaiworawit (NARIT) · **Version 6.4** (2026-07-24)
+**Maintainer:** Krittapas Chanchaiworawit (NARIT) · **Version 6.5** (2026-08-08)
+
+**New in v6.5:** finite extent for extended sources — set
+`source_extent_arcsec=` (or "Object extent along the slit" in the web
+app) so the extraction window matches the object, the 2-D simulations
+show it as a band of that size, and the sky is fitted outside it. If
+the object fills the slit, the app warns that on-slit sky subtraction
+is impossible and offset-sky exposures are needed.
 
 ---
 
@@ -86,7 +93,7 @@ bias ≈ 300 ADU, linear to 95 % FW; dark 0.08 (−80 °C) / 0.003 (−100 °C)
 e⁻/pix/s; read noise 4/12/15 e⁻ at 50 kHz/1 MHz/3 MHz. Only the central
 3′ of the slit is illuminated.
 
-## Absolute calibration — commissioning-anchored (v6.4)
+## Absolute calibration — commissioning-anchored (since v6.4)
 
 The ETC ships **commissioning-calibrated by default**
 (`USE_EMPIRICAL_CALIBRATION = True`, §2b): source and sky rates are scaled

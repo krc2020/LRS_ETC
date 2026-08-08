@@ -1,7 +1,7 @@
 """
 lrs_etc.core — spectra, conditions, and the ETC engine.
 
-Physics identical to LRS_ETC.ipynb v6.4. All spectra are dicts:
+Physics identical to LRS_ETC.ipynb v6.5. All spectra are dicts:
 {"wav": Angstrom grid, "flam": erg/s/cm2/A, "name": str, ...}.
 """
 

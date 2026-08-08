@@ -1,7 +1,7 @@
 """
 lrs_etc.config — instrument constants, site, data paths, calibration switch.
 
-All values mirror LRS_ETC.ipynb v6.4. Datasheet numbers are user-confirmed;
+All values mirror LRS_ETC.ipynb v6.5. Datasheet numbers are user-confirmed;
 mirror reflectivities are the 2026 NARIT measurements.
 """
 
@@ -74,7 +74,7 @@ WEATHER_LOSS, BLOCK_S = 0.35, 3600.0
 STD_INTERVAL_S, STD_EXP_S, STD_MAX_EXP = 7200.0, 30.0, 10
 HALF_NIGHT_S, NIGHT_CAL_S, DAYTIME_CAL_S = 6 * 3600.0, 3600.0, 3600.0
 
-# --- empirical commissioning calibration (v6.4, shutter-corrected) ------
+# --- empirical commissioning calibration (since v6.4, shutter-corrected) ------
 # BD+75d325 2026-04-01: measured/model response ratio; +7 s stuck-shutter
 # correction applied (header 30 s -> 37 s effective).
 SHUTTER_EXTRA_S = 7.0

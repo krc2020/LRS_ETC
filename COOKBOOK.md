@@ -1,6 +1,6 @@
 # lrs_etc cookbook
 
-Parameter reference for the `lrs_etc` Python package (v6.4). Everything
+Parameter reference for the `lrs_etc` Python package (v6.5). Everything
 mirrors `LRS_ETC.ipynb`; the notebook remains the annotated derivation.
 
 ```python
